@@ -3,6 +3,92 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
+import requests
+import json
+import re
+import base64
+import io
+from datetime import date
+from bs4 import BeautifulSoup
+from openpyxl import load_workbook
+
+GITHUB_REPO = "gijsbertvandeweg-stack/qp-price-monitor"
+GITHUB_FILE = "data.xlsx"
+
+RETAILER_MAP = {
+    "ah.nl": "Albert Heijn",
+    "jumbo.com": "Jumbo",
+    "aldi.nl": "Aldi",
+    "plus.nl": "Plus",
+    "dirk.nl": "Dirk",
+    "dekamarkt.nl": "DekaMarkt",
+    "vomar.nl": "Vomar",
+    "hoogvliet.com": "Hoogvliet",
+    "poiesz": "Poiesz",
+    "spar.nl": "Spar",
+}
+
+def detect_retailer(url: str) -> str:
+    for domain, name in RETAILER_MAP.items():
+        if domain in url:
+            return name
+    return "Onbekend"
+
+def fetch_price_requests(url: str):
+    try:
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+            "Accept-Language": "nl-NL,nl;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Sec-Fetch-Mode": "navigate",
+        })
+        if "ah.nl" in url:
+            session.get("https://www.ah.nl/", timeout=10)
+        resp = session.get(url, timeout=15, allow_redirects=True)
+        if resp.status_code != 200:
+            return None, f"Mislukt (HTTP {resp.status_code})"
+        soup = BeautifulSoup(resp.text, "lxml")
+        for sc in soup.find_all("script", type="application/ld+json"):
+            try:
+                data = json.loads(sc.string or "")
+                if isinstance(data, list): data = data[0]
+                if data.get("@type") == "Product":
+                    offers = data.get("offers", {})
+                    if isinstance(offers, list): offers = offers[0]
+                    price = offers.get("price") or offers.get("lowPrice")
+                    if price:
+                        return float(str(price).replace(",", ".")), "Succes (JSON-LD)"
+            except: pass
+        el = soup.find(itemprop="price")
+        if el:
+            try: return float(str(el.get("content") or el.get_text()).replace(",", ".")), "Succes (Schema.org)"
+            except: pass
+        return None, "Prijs niet automatisch gevonden"
+    except Exception as e:
+        return None, f"Fout: {str(e)[:60]}"
+
+def push_to_github(token: str):
+    try:
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        # Haal huidige SHA op
+        r = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}", headers=headers)
+        sha = r.json().get("sha", "")
+        # Lees het bestand
+        with open(EXCEL_PATH, "rb") as f:
+            content = base64.b64encode(f.read()).decode()
+        payload = {
+            "message": f"Nieuw product toegevoegd via app - {date.today()}",
+            "content": content,
+            "sha": sha,
+        }
+        r2 = requests.put(f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}", json=payload, headers=headers)
+        return r2.status_code in (200, 201)
+    except:
+        return False
 
 st.set_page_config(
     page_title="QP Price Monitor",
@@ -28,6 +114,64 @@ SUCCESS_STATUSES = [
     "Succes", "Succes (HTML price)", "Succes (Visueel HTML)",
 ]
 df_ok = df[df["status"].isin(SUCCESS_STATUSES) & df["prijs"].notna()]
+
+# ── Sidebar: Nieuw product toevoegen ──────────────────────────────────────────
+with st.sidebar.expander("➕ Nieuw product toevoegen"):
+    new_url = st.text_input("Plak URL hier", key="new_url")
+
+    if new_url:
+        retailer_auto = detect_retailer(new_url)
+        with st.spinner("Prijs ophalen..."):
+            prijs_auto, status_auto = fetch_price_requests(new_url)
+
+        if prijs_auto:
+            st.success(f"Prijs gevonden: **€{prijs_auto:.2f}**")
+        else:
+            st.warning(f"{status_auto} — vul prijs handmatig in")
+
+        with st.form("nieuw_product_form"):
+            product_naam = st.text_input("Productnaam *")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                artikel_nr = st.text_input("Artikelnummer")
+            with col_b:
+                leverancier = st.selectbox("Leverancier", ["Queens", "Concurrent"])
+            retailer_keuze = st.selectbox("Retailer", list(RETAILER_MAP.values()), index=list(RETAILER_MAP.values()).index(retailer_auto) if retailer_auto in RETAILER_MAP.values() else 0)
+            prijs_input = st.number_input("Prijs (€)", value=float(prijs_auto) if prijs_auto else 0.0, min_value=0.0, format="%.2f")
+            toevoegen = st.form_submit_button("✅ Toevoegen")
+
+        if toevoegen:
+            if not product_naam:
+                st.error("Vul een productnaam in.")
+            else:
+                wb = load_workbook(EXCEL_PATH)
+                ws = wb["Sheet1"]
+                ws.append([
+                    leverancier,
+                    float(artikel_nr) if artikel_nr else None,
+                    new_url,
+                    product_naam.upper(),
+                    prijs_input if prijs_input > 0 else None,
+                    retailer_keuze,
+                    status_auto or "Handmatig",
+                    date.today(),
+                    None,
+                ])
+                wb.save(EXCEL_PATH)
+
+                token = st.secrets.get("GITHUB_TOKEN", "")
+                if token:
+                    ok = push_to_github(token)
+                    if ok:
+                        st.success(f"✅ **{product_naam}** toegevoegd en online gezet!")
+                    else:
+                        st.warning("Opgeslagen, maar GitHub-sync mislukt.")
+                else:
+                    st.success(f"✅ **{product_naam}** lokaal toegevoegd.")
+                st.cache_data.clear()
+                st.rerun()
+
+st.sidebar.divider()
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 st.sidebar.title("Filters")
