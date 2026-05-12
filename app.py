@@ -173,6 +173,55 @@ with st.sidebar.expander("➕ Nieuw product toevoegen"):
 
 st.sidebar.divider()
 
+# ── Sidebar: Product verwijderen ───────────────────────────────────────────────
+with st.sidebar.expander("🗑️ Product verwijderen"):
+    df_uniek = df.drop_duplicates(subset=["product_naam", "retailer"])[["product_naam", "retailer"]].sort_values("product_naam")
+    producten_lijst = [f"{r['product_naam']} — {r['retailer']}" for _, r in df_uniek.iterrows()]
+
+    te_verwijderen = st.selectbox("Selecteer product × retailer", ["— kies —"] + producten_lijst, key="del_select")
+
+    if te_verwijderen != "— kies —":
+        prod_del, ret_del = te_verwijderen.rsplit(" — ", 1)
+        aantal = len(df[(df["product_naam"] == prod_del) & (df["retailer"] == ret_del)])
+        st.caption(f"Dit verwijdert **{aantal} meetpunten** uit de dataset.")
+
+        bevestig = st.checkbox("Ja, ik weet het zeker", key="del_confirm")
+        if st.button("🗑️ Verwijderen", disabled=not bevestig):
+            df_nieuw = df[(df["product_naam"] != prod_del) | (df["retailer"] != ret_del)]
+
+            # Schrijf terug naar Excel (alleen Sheet1 aanpassen, Analyse bewaren)
+            wb = load_workbook(EXCEL_PATH)
+            ws = wb["Sheet1"]
+            # Wis alle data-rijen en schrijf opnieuw
+            for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+                for cell in row:
+                    cell.value = None
+            for i, (_, row) in enumerate(df_nieuw.iterrows(), start=2):
+                ws.cell(i, 1, row["Leverancier"])
+                ws.cell(i, 2, row["Artikel_nummer"])
+                ws.cell(i, 3, row["URL"])
+                ws.cell(i, 4, row["product_naam"])
+                ws.cell(i, 5, row["prijs"])
+                ws.cell(i, 6, row["retailer"])
+                ws.cell(i, 7, row["status"])
+                ws.cell(i, 8, row["datum"].date() if pd.notna(row["datum"]) else None)
+                ws.cell(i, 9, row["Concurrentie"])
+            wb.save(EXCEL_PATH)
+
+            token = st.secrets.get("GITHUB_TOKEN", "")
+            if token:
+                ok = push_to_github(token)
+                if ok:
+                    st.success(f"✅ **{prod_del} — {ret_del}** verwijderd en online bijgewerkt!")
+                else:
+                    st.warning("Verwijderd, maar GitHub-sync mislukt.")
+            else:
+                st.success(f"✅ **{prod_del} — {ret_del}** lokaal verwijderd.")
+            st.cache_data.clear()
+            st.rerun()
+
+st.sidebar.divider()
+
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 st.sidebar.title("Filters")
 
