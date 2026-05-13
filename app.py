@@ -423,16 +423,15 @@ with tab4:
         # Filter opties
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            filter_wijz = st.selectbox("Toon", ["Alle", "Alleen wijzigingen", "Prijsstijgingen", "Prijsdalingen"], key="wijz_filter")
+            filter_wijz = st.selectbox("Toon", ["Alle wijzigingen", "Prijsstijgingen", "Prijsdalingen"], key="wijz_filter")
         with col_f2:
             filter_lev = st.selectbox("Leverancier", ["Alle", "Queens", "Concurrent"], key="wijz_lev")
 
-        toon = wijzigingen.copy()
+        # Standaard: alleen producten met een echte prijswijziging
+        toon = wijzigingen[wijzigingen["Verschil (€)"].notna() & (wijzigingen["Verschil (€)"] != 0)].copy()
         if filter_lev != "Alle":
             toon = toon[toon["Leverancier"] == filter_lev]
-        if filter_wijz == "Alleen wijzigingen":
-            toon = toon[toon["Verschil (€)"].notna() & (toon["Verschil (€)"] != 0)]
-        elif filter_wijz == "Prijsstijgingen":
+        if filter_wijz == "Prijsstijgingen":
             toon = toon[toon["Verschil (€)"] > 0]
         elif filter_wijz == "Prijsdalingen":
             toon = toon[toon["Verschil (€)"] < 0]
