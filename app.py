@@ -283,8 +283,8 @@ with col4:
 st.divider()
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📈 Prijsverloop", "⚖️ Queens vs Concurrent", "🏪 Retailervergelijking", "🔍 Datakwaliteit", "📋 Alle data"
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "📈 Prijsverloop", "⚖️ Queens vs Concurrent", "🏪 Retailervergelijking", "🔔 Prijswijzigingen", "🔍 Datakwaliteit", "📋 Alle data"
 ])
 
 # ── Tab 1: Prijsverloop ────────────────────────────────────────────────────────
@@ -406,8 +406,64 @@ with tab3:
                 most_exp = prod_latest.loc[prod_latest["prijs"].idxmax()]
                 st.error(f"**Duurste:** {most_exp['retailer']} — €{most_exp['prijs']:.2f}")
 
-# ── Tab 4: Datakwaliteit ───────────────────────────────────────────────────────
+# ── Tab 4: Prijswijzigingen ────────────────────────────────────────────────────
 with tab4:
+    st.subheader(f"Prijswijzigingen: {prev_date.strftime('%d-%m-%Y') if prev_date else '—'} → {latest_date.strftime('%d-%m-%Y')}")
+
+    if prev_date is None:
+        st.info("Niet genoeg meetmomenten voor vergelijking.")
+    else:
+        latest_df = df_ok[df_ok["datum"] == latest_date][["Leverancier", "product_naam", "retailer", "prijs"]].rename(columns={"prijs": "Nieuwe prijs"})
+        prev_df   = df_ok[df_ok["datum"] == prev_date][["product_naam", "retailer", "prijs"]].rename(columns={"prijs": "Oude prijs"})
+
+        wijzigingen = latest_df.merge(prev_df, on=["product_naam", "retailer"], how="left")
+        wijzigingen["Verschil (€)"] = wijzigingen["Nieuwe prijs"] - wijzigingen["Oude prijs"]
+        wijzigingen["Verschil (%)"] = (wijzigingen["Verschil (€)"] / wijzigingen["Oude prijs"] * 100).round(1)
+
+        # Filter opties
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            filter_wijz = st.selectbox("Toon", ["Alle", "Alleen wijzigingen", "Prijsstijgingen", "Prijsdalingen"], key="wijz_filter")
+        with col_f2:
+            filter_lev = st.selectbox("Leverancier", ["Alle", "Queens", "Concurrent"], key="wijz_lev")
+
+        toon = wijzigingen.copy()
+        if filter_lev != "Alle":
+            toon = toon[toon["Leverancier"] == filter_lev]
+        if filter_wijz == "Alleen wijzigingen":
+            toon = toon[toon["Verschil (€)"].notna() & (toon["Verschil (€)"] != 0)]
+        elif filter_wijz == "Prijsstijgingen":
+            toon = toon[toon["Verschil (€)"] > 0]
+        elif filter_wijz == "Prijsdalingen":
+            toon = toon[toon["Verschil (€)"] < 0]
+
+        toon = toon.sort_values("Verschil (€)", ascending=False)
+
+        # KPI's
+        n_stijging = (wijzigingen["Verschil (€)"] > 0).sum()
+        n_daling   = (wijzigingen["Verschil (€)"] < 0).sum()
+        n_gelijk   = (wijzigingen["Verschil (€)"] == 0).sum()
+        k1, k2, k3 = st.columns(3)
+        k1.metric("📈 Gestegen", n_stijging)
+        k2.metric("📉 Gedaald", n_daling)
+        k3.metric("➡️ Ongewijzigd", n_gelijk)
+
+        # Tabel
+        toon_display = toon.copy()
+        toon_display["Oude prijs"]    = toon_display["Oude prijs"].apply(lambda x: f"€{x:.2f}" if pd.notna(x) else "—")
+        toon_display["Nieuwe prijs"]  = toon_display["Nieuwe prijs"].apply(lambda x: f"€{x:.2f}" if pd.notna(x) else "—")
+        toon_display["Verschil (€)"]  = toon_display["Verschil (€)"].apply(lambda x: f"{x:+.2f}" if pd.notna(x) else "nieuw")
+        toon_display["Verschil (%)"]  = toon_display["Verschil (%)"].apply(lambda x: f"{x:+.1f}%" if pd.notna(x) else "—")
+        toon_display = toon_display.rename(columns={"product_naam": "Product", "retailer": "Retailer"})
+
+        st.dataframe(
+            toon_display[["Leverancier", "Product", "Retailer", "Oude prijs", "Nieuwe prijs", "Verschil (€)", "Verschil (%)"]].reset_index(drop=True),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+# ── Tab 5: Datakwaliteit ───────────────────────────────────────────────────────
+with tab5:
     st.subheader("Scrape-status overzicht")
 
     status_counts = df.groupby(["datum", "status"]).size().reset_index(name="aantal")
@@ -437,8 +493,8 @@ with tab4:
     coverage["Laatste meting"] = coverage["Laatste meting"].dt.strftime("%d-%m-%Y")
     st.dataframe(coverage, use_container_width=True, hide_index=True)
 
-# ── Tab 5: Alle data ───────────────────────────────────────────────────────────
-with tab5:
+# ── Tab 6: Alle data ───────────────────────────────────────────────────────────
+with tab6:
     st.subheader("Alle meetdata")
 
     tbl_df = filtered.copy()
