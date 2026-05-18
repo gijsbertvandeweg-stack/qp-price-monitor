@@ -344,20 +344,6 @@ with tab2:
         .rename(columns={"prijs": "Concurrent prijs"})
     )
 
-    # Prijsverdeling boxplot per leverancier
-    fig2 = px.box(
-        latest_all,
-        x="Leverancier",
-        y="prijs",
-        color="Leverancier",
-        points="all",
-        title=f"Prijsverdeling op {latest_date.strftime('%d-%m-%Y')}",
-        labels={"prijs": "Prijs (€)"},
-        color_discrete_map={"Queens": "#0068c9", "Concurrent": "#ff6b35"},
-    )
-    fig2.update_layout(yaxis_tickprefix="€", showlegend=False)
-    st.plotly_chart(fig2, use_container_width=True)
-
     col_a, col_b = st.columns(2)
     with col_a:
         st.markdown("**Queens producten**")
