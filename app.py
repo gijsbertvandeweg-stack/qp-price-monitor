@@ -260,8 +260,18 @@ st.caption(f"Databron: {EXCEL_PATH.name}  ·  {len(df):,} meetpunten  ·  {df['d
 
 # ── KPI cards ──────────────────────────────────────────────────────────────────
 latest_date = df_ok["datum"].max()
-prev_dates = sorted(df_ok[df_ok["datum"] < latest_date]["datum"].unique())
-prev_date = prev_dates[-1] if prev_dates else None
+
+# Bepaal de drempel: de 'vorige meting' moet minstens 30% van de huidige meting-omvang hebben
+# zodat handmatig toegevoegde items (1 rij) niet als 'vorig meetmoment' worden gezien
+latest_count = (df_ok["datum"] == latest_date).sum()
+min_threshold = max(5, int(latest_count * 0.3))
+
+date_counts = df_ok.groupby("datum").size()
+full_prev_dates = sorted([
+    d for d in date_counts.index
+    if d < latest_date and date_counts[d] >= min_threshold
+])
+prev_date = full_prev_dates[-1] if full_prev_dates else None
 
 col1, col2, col3, col4 = st.columns(4)
 
