@@ -64,6 +64,12 @@ def fetch_price_requests(url: str):
         if el:
             try: return float(str(el.get("content") or el.get_text()).replace(",", ".")), "Succes (Schema.org)"
             except: pass
+        # Aldi: {"priceValue":2.49,...}  (ook met escaped quotes)
+        for sc in soup.find_all("script"):
+            m = re.search(r'priceValue.{1,6}?([\d]+\.[\d]{1,2})', sc.string or "")
+            if m:
+                try: return float(m.group(1)), "Succes (JSON-LD)"
+                except: pass
         return None, "Prijs niet automatisch gevonden"
     except Exception as e:
         return None, f"Fout: {str(e)[:60]}"
@@ -342,7 +348,7 @@ with tab2:
         "🐟 Koolvis": ["koolvis"],
         "🐟 Kabeljauw": ["kabeljauw"],
         "🐟 Tilapia": ["tilapia"],
-        "🧊 IJs & Crushed Ice": [" ice ", "ice balls", "ice cubes", "crushed ice", "ijsblok"],
+        "🧊 IJs & Crushed Ice": [" ice ", "ice balls", "ice cubes", "crushed ice", "ijsblok", "spinner"],
         "🥖 Knoflookbaguette": ["baguette"],
         "🥟 Orien Bites": ["orien", "gyoza", "gua bao"],
     }
