@@ -294,7 +294,7 @@ st.divider()
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "📈 Prijsverloop", "⚖️ Queens vs Concurrent", "🏪 Retailervergelijking", "🔔 Prijswijzigingen", "🔍 Datakwaliteit", "📋 Alle data"
+    "📈 Prijsverloop", "🏷️ Marktoverzicht", "🏪 Retailervergelijking", "🔔 Prijswijzigingen", "🔍 Datakwaliteit", "📋 Alle data"
 ])
 
 # ── Tab 1: Prijsverloop ────────────────────────────────────────────────────────
@@ -333,38 +333,67 @@ with tab1:
         else:
             st.write("Niet genoeg meetmomenten voor vergelijking.")
 
-# ── Tab 2: Queens vs Concurrent ───────────────────────────────────────────────
+# ── Tab 2: Marktoverzicht per categorie ───────────────────────────────────────
 with tab2:
-    st.subheader("Meest recente prijzen — Queens vs. Concurrent")
+    # Categorie-indeling op basis van trefwoorden in productnaam (lowercase)
+    CATEGORIE_MAP = {
+        "🐟 Pangasius & Pangalicious": ["pangasi", "pangalicious", "pangafilet", "golden seafood"],
+        "🐟 Wilde Zalm": ["zalm", "zalmfilet"],
+        "🐟 Koolvis": ["koolvis"],
+        "🐟 Kabeljauw": ["kabeljauw"],
+        "🐟 Tilapia": ["tilapia"],
+        "🧊 IJs & Crushed Ice": [" ice ", "ice balls", "ice cubes", "crushed ice", "ijsblok"],
+        "🥖 Knoflookbaguette": ["baguette"],
+        "🥟 Orien Bites": ["orien", "gyoza", "gua bao"],
+    }
 
-    latest_all = df_ok[df_ok["datum"] == latest_date].copy()
+    def get_categorie(naam: str) -> str:
+        naam_lower = f" {naam.lower()} "
+        for cat, trefwoorden in CATEGORIE_MAP.items():
+            if any(t in naam_lower for t in trefwoorden):
+                return cat
+        return "📦 Overig"
 
-    queens_latest = (
-        latest_all[latest_all["Leverancier"] == "Queens"]
-        .groupby(["product_naam", "retailer"])["prijs"]
-        .mean()
-        .reset_index()
-        .rename(columns={"prijs": "Queens prijs"})
-    )
-    conc_latest = (
-        latest_all[latest_all["Leverancier"] == "Concurrent"]
-        .groupby(["product_naam", "retailer"])["prijs"]
-        .mean()
-        .reset_index()
-        .rename(columns={"prijs": "Concurrent prijs"})
-    )
+    # Data voor de twee meetmomenten
+    lat_all = df_ok[df_ok["datum"] == latest_date][["Leverancier", "product_naam", "retailer", "prijs"]].copy()
+    prv_all = (df_ok[df_ok["datum"] == prev_date][["product_naam", "retailer", "prijs"]].copy()
+               if prev_date is not None else pd.DataFrame(columns=["product_naam", "retailer", "prijs"]))
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.markdown("**Queens producten**")
-        q_tbl = queens_latest.copy()
-        q_tbl["Queens prijs"] = q_tbl["Queens prijs"].apply(lambda x: f"€{x:.2f}")
-        st.dataframe(q_tbl, use_container_width=True, hide_index=True)
-    with col_b:
-        st.markdown("**Concurrent producten**")
-        c_tbl = conc_latest.copy()
-        c_tbl["Concurrent prijs"] = c_tbl["Concurrent prijs"].apply(lambda x: f"€{x:.2f}")
-        st.dataframe(c_tbl, use_container_width=True, hide_index=True)
+    lat_all = lat_all.rename(columns={"prijs": f"Prijs {latest_date.strftime('%d-%m-%Y')}"})
+    prv_all = prv_all.rename(columns={"prijs": f"Prijs {prev_date.strftime('%d-%m-%Y') if prev_date else '—'}"})
+
+    markt = lat_all.merge(prv_all, on=["product_naam", "retailer"], how="left")
+
+    prijs_nu  = f"Prijs {latest_date.strftime('%d-%m-%Y')}"
+    prijs_prv = f"Prijs {prev_date.strftime('%d-%m-%Y') if prev_date else '—'}"
+    markt["Δ (€)"] = markt[prijs_nu] - markt[prijs_prv]
+
+    markt["Categorie"] = markt["product_naam"].apply(get_categorie)
+
+    # Sorteer: Queens boven, daarna alfabetisch op product en retailer
+    markt["_sort_lev"] = markt["Leverancier"].map({"Queens": 0, "Concurrent": 1}).fillna(2)
+    markt = markt.sort_values(["Categorie", "_sort_lev", "product_naam", "retailer"])
+
+    st.subheader("Marktoverzicht per productcategorie")
+    st.caption(f"Vergelijking: {prev_date.strftime('%d-%m-%Y') if prev_date else '—'} → {latest_date.strftime('%d-%m-%Y')}")
+
+    alle_cats = sorted(markt["Categorie"].unique().tolist())
+
+    for cat in alle_cats:
+        cat_df = markt[markt["Categorie"] == cat].copy()
+
+        with st.expander(f"{cat}  ({len(cat_df)} items)", expanded=True):
+            display = cat_df[["Leverancier", "product_naam", "retailer", prijs_prv, prijs_nu, "Δ (€)"]].copy()
+            display = display.rename(columns={"product_naam": "Product", "retailer": "Retailer"})
+
+            # Opmaak
+            display[prijs_prv] = display[prijs_prv].apply(lambda x: f"€{x:.2f}" if pd.notna(x) else "—")
+            display[prijs_nu]  = display[prijs_nu].apply(lambda x: f"€{x:.2f}" if pd.notna(x) else "—")
+            display["Δ (€)"]  = display["Δ (€)"].apply(
+                lambda x: (f"+€{x:.2f}" if x > 0 else f"-€{abs(x):.2f}") if pd.notna(x) and x != 0 else ("—" if pd.isna(x) else "")
+            )
+
+            st.dataframe(display.reset_index(drop=True), use_container_width=True, hide_index=True)
 
 # ── Tab 3: Retailervergelijking ────────────────────────────────────────────────
 with tab3:
