@@ -360,19 +360,31 @@ with tab2:
                 return cat
         return "📦 Overig"
 
-    # Data voor de twee meetmomenten
-    lat_all = df_ok[df_ok["datum"] == latest_date][["Leverancier", "product_naam", "retailer", "prijs"]].copy()
-    prv_all = (df_ok[df_ok["datum"] == prev_date][["product_naam", "retailer", "prijs"]].copy()
-               if prev_date is not None else pd.DataFrame(columns=["product_naam", "retailer", "prijs"]))
+    # Gebruik per product × retailer de meest recente prijs (niet gefixeerd op één datum)
+    # Zo blijven alle producten zichtbaar, ook als ze op verschillende datums zijn toegevoegd
+    meest_recent = (
+        df_ok.sort_values("datum")
+        .groupby(["product_naam", "retailer"])
+        .last()
+        .reset_index()[["Leverancier", "product_naam", "retailer", "datum", "prijs"]]
+    )
 
-    lat_all = lat_all.rename(columns={"prijs": f"Prijs {latest_date.strftime('%d-%m-%Y')}"})
-    prv_all = prv_all.rename(columns={"prijs": f"Prijs {prev_date.strftime('%d-%m-%Y') if prev_date else '—'}"})
+    # Vorige prijs: op voet van de op-één-na-laatste datum per product × retailer
+    vorige_prijs = (
+        df_ok[df_ok["datum"] < df_ok.groupby(["product_naam", "retailer"])["datum"].transform("max")]
+        .sort_values("datum")
+        .groupby(["product_naam", "retailer"])
+        .last()
+        .reset_index()[["product_naam", "retailer", "datum", "prijs"]]
+        .rename(columns={"prijs": "Vorige prijs", "datum": "Vorige datum"})
+    )
 
-    markt = lat_all.merge(prv_all, on=["product_naam", "retailer"], how="left")
+    markt = meest_recent.merge(vorige_prijs, on=["product_naam", "retailer"], how="left")
+    markt = markt.rename(columns={"prijs": "Laatste prijs", "datum": "Laatste datum"})
+    markt["Δ (€)"] = markt["Laatste prijs"] - markt["Vorige prijs"]
 
-    prijs_nu  = f"Prijs {latest_date.strftime('%d-%m-%Y')}"
-    prijs_prv = f"Prijs {prev_date.strftime('%d-%m-%Y') if prev_date else '—'}"
-    markt["Δ (€)"] = markt[prijs_nu] - markt[prijs_prv]
+    prijs_nu  = "Laatste prijs"
+    prijs_prv = "Vorige prijs"
 
     markt["Categorie"] = markt["product_naam"].apply(get_categorie)
 
@@ -381,7 +393,7 @@ with tab2:
     markt = markt.sort_values(["Categorie", "_sort_lev", "product_naam", "retailer"])
 
     st.subheader("Marktoverzicht per productcategorie")
-    st.caption(f"Vergelijking: {prev_date.strftime('%d-%m-%Y') if prev_date else '—'} → {latest_date.strftime('%d-%m-%Y')}")
+    st.caption(f"Meest recente prijs per product × retailer, vergeleken met de vorige meting")
 
     alle_cats = sorted(markt["Categorie"].unique().tolist())
 
@@ -389,13 +401,20 @@ with tab2:
         cat_df = markt[markt["Categorie"] == cat].copy()
 
         with st.expander(f"{cat}  ({len(cat_df)} items)", expanded=True):
-            display = cat_df[["Leverancier", "product_naam", "retailer", prijs_prv, prijs_nu, "Δ (€)"]].copy()
-            display = display.rename(columns={"product_naam": "Product", "retailer": "Retailer"})
+            display = cat_df[["Leverancier", "product_naam", "retailer", "Laatste datum", "Vorige prijs", "Laatste prijs", "Δ (€)"]].copy()
+            display = display.rename(columns={
+                "product_naam": "Product",
+                "retailer": "Retailer",
+                "Laatste datum": "Datum",
+                "Vorige prijs": "Vorige prijs",
+                "Laatste prijs": "Laatste prijs",
+            })
 
             # Opmaak
-            display[prijs_prv] = display[prijs_prv].apply(lambda x: f"€{x:.2f}" if pd.notna(x) else "—")
-            display[prijs_nu]  = display[prijs_nu].apply(lambda x: f"€{x:.2f}" if pd.notna(x) else "—")
-            display["Δ (€)"]  = display["Δ (€)"].apply(
+            display["Datum"]         = display["Datum"].dt.strftime("%d-%m-%Y")
+            display["Vorige prijs"]  = display["Vorige prijs"].apply(lambda x: f"€{x:.2f}" if pd.notna(x) else "—")
+            display["Laatste prijs"] = display["Laatste prijs"].apply(lambda x: f"€{x:.2f}" if pd.notna(x) else "—")
+            display["Δ (€)"]         = display["Δ (€)"].apply(
                 lambda x: (f"+€{x:.2f}" if x > 0 else f"-€{abs(x):.2f}") if pd.notna(x) and x != 0 else ("—" if pd.isna(x) else "")
             )
 
