@@ -235,7 +235,24 @@ leveranciers = ["Alle"] + sorted(df["Leverancier"].dropna().unique().tolist())
 sel_leverancier = st.sidebar.selectbox("Leverancier", leveranciers)
 
 retailers = sorted(df["retailer"].dropna().unique().tolist())
-sel_retailers = st.sidebar.multiselect("Retailer(s)", retailers, default=retailers)
+
+# Snelknoppen boven de multiselect
+st.sidebar.caption("Retailer(s)")
+btn_col1, btn_col2 = st.sidebar.columns(2)
+with btn_col1:
+    if st.button("✓ Alle", use_container_width=True, key="ret_alle"):
+        st.session_state["sel_retailers"] = retailers
+with btn_col2:
+    if st.button("✗ Geen", use_container_width=True, key="ret_geen"):
+        st.session_state["sel_retailers"] = []
+
+sel_retailers = st.sidebar.multiselect(
+    label="",
+    options=retailers,
+    default=st.session_state.get("sel_retailers", retailers),
+    key="sel_retailers",
+    label_visibility="collapsed",
+)
 
 filtered = df_ok.copy()
 if sel_leverancier != "Alle":
