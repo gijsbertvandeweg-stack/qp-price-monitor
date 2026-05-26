@@ -512,24 +512,54 @@ with tab4:
         )
 
         # ── Excel download ────────────────────────────────────────────────────
-        col_oud  = f"Prijs {prev_date.strftime('%d-%m-%Y')}"
-        col_nieuw = f"Prijs {latest_date.strftime('%d-%m-%Y')}"
-        export_df = toon[["Leverancier", "product_naam", "retailer", "Oude prijs", "Nieuwe prijs", "Verschil (€)", "Verschil (%)"]].copy()
-        export_df = export_df.rename(columns={
-            "product_naam": "Product",
-            "retailer": "Retailer",
-            "Oude prijs": col_oud,
-            "Nieuwe prijs": col_nieuw,
-        })
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment
+
+        # Datums zonder leading zero: "18-5-2026"
+        datum_oud   = f"{prev_date.day}-{prev_date.month}-{prev_date.year}"
+        datum_nieuw = f"{latest_date.day}-{latest_date.month}-{latest_date.year}"
 
         excel_buffer = io.BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
-            export_df.reset_index(drop=True).to_excel(writer, index=False, sheet_name="Prijswijzigingen")
-            ws = writer.sheets["Prijswijzigingen"]
-            # Kolombreedtes aanpassen
-            col_widths = {"A": 14, "B": 55, "C": 16, "D": 22, "E": 22, "F": 14, "G": 14}
-            for col, width in col_widths.items():
-                ws.column_dimensions[col].width = width
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Prijswijzigingen"
+
+        # Headers — vetgedrukt, datum op tweede regel
+        headers = [
+            "Leverancier", "Product", "Retailer",
+            f"Oude prijs\n{datum_oud}",
+            f"Nieuwe prijs\n{datum_nieuw}",
+            "Verschil (€)", "Verschil (%)",
+        ]
+        for c, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=c, value=h)
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(wrap_text=True, vertical="bottom")
+        ws.row_dimensions[1].height = 30
+
+        # Opmaakcodes
+        euro_fmt = '_-"€"* #,##0.00_-;-"€"* #,##0.00_-;_-"€"* "-"??_-;_-@_-'
+        pct_fmt  = '0.00%'
+
+        # Data schrijven met numerieke waarden (toon bevat nog echte floats)
+        export_rows = toon[["Leverancier", "product_naam", "retailer",
+                             "Oude prijs", "Nieuwe prijs", "Verschil (€)", "Verschil (%)"]].reset_index(drop=True)
+
+        for r, row in enumerate(export_rows.itertuples(index=False), 2):
+            ws.cell(r, 1, row[0])  # Leverancier
+            ws.cell(r, 2, row[1])  # Product
+            ws.cell(r, 3, row[2])  # Retailer
+            for c, val in [(4, row[3]), (5, row[4]), (6, row[5])]:
+                cell = ws.cell(r, c, float(val) if pd.notna(val) else None)
+                cell.number_format = euro_fmt
+            pct_cell = ws.cell(r, 7, float(row[6]) / 100 if pd.notna(row[6]) else None)
+            pct_cell.number_format = pct_fmt
+
+        # Kolombreedtes
+        for col, breedte in zip("ABCDEFG", [14, 44, 12, 18, 18, 14, 13]):
+            ws.column_dimensions[col].width = breedte
+
+        wb.save(excel_buffer)
         excel_buffer.seek(0)
 
         bestandsnaam = f"prijswijzigingen_{prev_date.strftime('%Y%m%d')}_{latest_date.strftime('%Y%m%d')}.xlsx"
