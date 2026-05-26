@@ -1,0 +1,36 @@
+name: Weekly Price Scraper
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # Elke maandag 8:00 CEST (zomer) / 7:00 CET (winter)
+  workflow_dispatch:        # Handmatig starten via GitHub knop
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pandas openpyxl requests beautifulsoup4 lxml playwright
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Run scraper
+        run: python scraper.py
+
+      - name: Commit en push bijgewerkte data
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add data.xlsx
+          git diff --staged --quiet || git commit -m "Automatische prijsupdate $(date +'%d-%m-%Y')"
+          git push
