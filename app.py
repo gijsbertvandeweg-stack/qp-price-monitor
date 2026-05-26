@@ -249,41 +249,20 @@ with st.sidebar.expander("🗑️ Product verwijderen"):
 
 st.sidebar.divider()
 
-# ── Sidebar ────────────────────────────────────────────────────────────────────
+# ── Sidebar filters ────────────────────────────────────────────────────────────
 st.sidebar.title("Filters")
-
-leveranciers = ["Alle"] + sorted(df["Leverancier"].dropna().unique().tolist())
-sel_leverancier = st.sidebar.selectbox("Leverancier", leveranciers)
 
 retailers = sorted(df["retailer"].dropna().unique().tolist())
 
-# Snelknoppen boven de multiselect
-st.sidebar.caption("Retailer(s)")
-btn_col1, btn_col2 = st.sidebar.columns(2)
-with btn_col1:
-    if st.button("✓ Alle", use_container_width=True, key="ret_alle"):
-        st.session_state["sel_retailers"] = retailers
-with btn_col2:
-    if st.button("✗ Geen", use_container_width=True, key="ret_geen"):
-        st.session_state["sel_retailers"] = []
+# 1. Product (eerst — afhankelijk van leverancier/retailer, dus eerst tijdelijk alles)
+producten_alle = sorted(df_ok["product_naam"].dropna().unique().tolist())
+sel_product = st.sidebar.selectbox("Product", ["— selecteer —"] + producten_alle)
 
-sel_retailers = st.sidebar.multiselect(
-    label="",
-    options=retailers,
-    default=st.session_state.get("sel_retailers", retailers),
-    key="sel_retailers",
-    label_visibility="collapsed",
-)
+# 2. Leverancier
+leveranciers = ["Alle"] + sorted(df["Leverancier"].dropna().unique().tolist())
+sel_leverancier = st.sidebar.selectbox("Leverancier", leveranciers)
 
-filtered = df_ok.copy()
-if sel_leverancier != "Alle":
-    filtered = filtered[filtered["Leverancier"] == sel_leverancier]
-if sel_retailers:
-    filtered = filtered[filtered["retailer"].isin(sel_retailers)]
-
-producten = sorted(filtered["product_naam"].dropna().unique().tolist())
-sel_product = st.sidebar.selectbox("Product", ["— selecteer —"] + producten)
-
+# 3. Periode
 datums = sorted(df["datum"].dt.date.unique())
 datum_min, datum_max = datums[0], datums[-1]
 sel_datum = st.sidebar.date_input(
@@ -292,12 +271,27 @@ sel_datum = st.sidebar.date_input(
     min_value=datum_min,
     max_value=datum_max,
 )
-if isinstance(sel_datum, tuple) and len(sel_datum) == 2:
-    filtered = filtered[
-        (filtered["datum"].dt.date >= sel_datum[0])
-        & (filtered["datum"].dt.date <= sel_datum[1])
-    ]
 
+# 4. Retailers — als expander net als nieuw product / verwijderen
+with st.sidebar.expander("🏪 Retailers filteren", expanded=False):
+    btn_col1, btn_col2 = st.columns(2)
+    with btn_col1:
+        if st.button("✓ Alle", use_container_width=True, key="ret_alle"):
+            st.session_state["sel_retailers"] = retailers
+    with btn_col2:
+        if st.button("✗ Geen", use_container_width=True, key="ret_geen"):
+            st.session_state["sel_retailers"] = []
+
+    sel_retailers = st.multiselect(
+        label="",
+        options=retailers,
+        default=st.session_state.get("sel_retailers", retailers),
+        key="sel_retailers",
+        label_visibility="collapsed",
+    )
+
+# ── Filtering toepassen ────────────────────────────────────────────────────────
+filtered = df_ok.copy()
 # ── Header ─────────────────────────────────────────────────────────────────────
 st.title("📊 QP Price Monitor")
 st.caption(f"Databron: {EXCEL_PATH.name}  ·  {len(df):,} meetpunten  ·  {df['datum'].dt.date.nunique()} meetmomenten")
