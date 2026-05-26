@@ -102,6 +102,27 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown("""
+<style>
+/* Multiselect tags: neutrale grijze stijl */
+[data-baseweb="tag"] {
+    background-color: #e8e8e8 !important;
+    border: 1px solid #ccc !important;
+    border-radius: 4px !important;
+}
+[data-baseweb="tag"] span[title] {
+    color: #333 !important;
+    font-size: 0.82rem !important;
+}
+[data-baseweb="tag"] svg {
+    fill: #666 !important;
+}
+[data-baseweb="tag"]:hover {
+    background-color: #d8d8d8 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 EXCEL_PATH = Path(__file__).parent / "data.xlsx"
 
 @st.cache_data(ttl=600)  # Herlaadt elke 10 minuten automatisch
