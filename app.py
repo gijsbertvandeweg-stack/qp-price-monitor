@@ -511,6 +511,28 @@ with tab4:
             hide_index=True,
         )
 
+        # ── Excel download ────────────────────────────────────────────────────
+        export_df = toon[["Leverancier", "product_naam", "retailer", "Oude prijs", "Nieuwe prijs", "Verschil (€)", "Verschil (%)"]].copy()
+        export_df = export_df.rename(columns={"product_naam": "Product", "retailer": "Retailer"})
+
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+            export_df.reset_index(drop=True).to_excel(writer, index=False, sheet_name="Prijswijzigingen")
+            ws = writer.sheets["Prijswijzigingen"]
+            # Kolombreedtes aanpassen
+            col_widths = {"A": 14, "B": 55, "C": 16, "D": 14, "E": 14, "F": 14, "G": 14}
+            for col, width in col_widths.items():
+                ws.column_dimensions[col].width = width
+        excel_buffer.seek(0)
+
+        bestandsnaam = f"prijswijzigingen_{prev_date.strftime('%Y%m%d')}_{latest_date.strftime('%Y%m%d')}.xlsx"
+        st.download_button(
+            label="⬇️ Download als Excel",
+            data=excel_buffer,
+            file_name=bestandsnaam,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
 # ── Tab 5: Datakwaliteit ───────────────────────────────────────────────────────
 with tab5:
     st.subheader("Scrape-status overzicht")
