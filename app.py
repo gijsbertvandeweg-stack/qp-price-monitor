@@ -331,8 +331,8 @@ with col4:
 st.divider()
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "📈 Prijsverloop", "🏷️ Marktoverzicht", "🏪 Retailervergelijking", "🔔 Prijswijzigingen", "🔍 Datakwaliteit", "📋 Alle data"
+tab4, tab1, tab2, tab3, tab5, tab6 = st.tabs([
+    "🔔 Prijswijzigingen", "📈 Prijsverloop", "🏷️ Marktoverzicht", "🏪 Retailervergelijking", "🔍 Datakwaliteit", "📋 Alle data"
 ])
 
 # ── Tab 1: Prijsverloop ────────────────────────────────────────────────────────
