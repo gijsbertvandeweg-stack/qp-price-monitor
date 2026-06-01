@@ -530,15 +530,23 @@ with tab4:
         k3.metric("➡️ Ongewijzigd", n_gelijk)
 
         # Tabel
+        col_oud   = f"Oude prijs ({prev_date.strftime('%d-%m-%Y')})"
+        col_nieuw = f"Nieuwe prijs ({latest_date.strftime('%d-%m-%Y')})"
+
         toon_display = toon.copy()
-        toon_display["Oude prijs"]    = toon_display["Oude prijs"].apply(lambda x: f"€{x:.2f}" if pd.notna(x) else "—")
-        toon_display["Nieuwe prijs"]  = toon_display["Nieuwe prijs"].apply(lambda x: f"€{x:.2f}" if pd.notna(x) else "—")
-        toon_display["Verschil (€)"]  = toon_display["Verschil (€)"].apply(lambda x: f"{x:+.2f}" if pd.notna(x) else "nieuw")
-        toon_display["Verschil (%)"]  = toon_display["Verschil (%)"].apply(lambda x: f"{x:+.1f}%" if pd.notna(x) else "—")
-        toon_display = toon_display.rename(columns={"product_naam": "Product", "retailer": "Retailer"})
+        toon_display["Oude prijs"]   = toon_display["Oude prijs"].apply(lambda x: f"€{x:.2f}" if pd.notna(x) else "—")
+        toon_display["Nieuwe prijs"] = toon_display["Nieuwe prijs"].apply(lambda x: f"€{x:.2f}" if pd.notna(x) else "—")
+        toon_display["Verschil (€)"] = toon_display["Verschil (€)"].apply(lambda x: f"{x:+.2f}" if pd.notna(x) else "nieuw")
+        toon_display["Verschil (%)"] = toon_display["Verschil (%)"].apply(lambda x: f"{x:+.1f}%" if pd.notna(x) else "—")
+        toon_display = toon_display.rename(columns={
+            "product_naam": "Product",
+            "retailer": "Retailer",
+            "Oude prijs": col_oud,
+            "Nieuwe prijs": col_nieuw,
+        })
 
         st.dataframe(
-            toon_display[["Leverancier", "Product", "Retailer", "Oude prijs", "Nieuwe prijs", "Verschil (€)", "Verschil (%)"]].reset_index(drop=True),
+            toon_display[["Leverancier", "Product", "Retailer", col_oud, col_nieuw, "Verschil (€)", "Verschil (%)"]].reset_index(drop=True),
             use_container_width=True,
             hide_index=True,
         )
