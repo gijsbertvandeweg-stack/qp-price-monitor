@@ -545,18 +545,34 @@ with tab4:
 
         # ── Excel download ────────────────────────────────────────────────────
         from openpyxl import Workbook
-        from openpyxl.styles import Font, Alignment
+        from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+        from openpyxl.utils import get_column_letter
 
-        # Datums zonder leading zero: "18-5-2026"
         datum_oud   = f"{prev_date.day}-{prev_date.month}-{prev_date.year}"
         datum_nieuw = f"{latest_date.day}-{latest_date.month}-{latest_date.year}"
 
-        excel_buffer = io.BytesIO()
+        # Snapshot van de huidige data (voorkomt stale-buffer bug)
+        export_rows = toon[["Leverancier", "product_naam", "retailer",
+                             "Oude prijs", "Nieuwe prijs",
+                             "Verschil (€)", "Verschil (%)"]].reset_index(drop=True).copy()
+
         wb = Workbook()
         ws = wb.active
         ws.title = "Prijswijzigingen"
 
-        # Headers — vetgedrukt, datum op tweede regel
+        # Stijlen
+        HDR_FILL  = PatternFill("solid", fgColor="1F4E79")   # donkerblauw
+        HDR_FONT  = Font(bold=True, color="FFFFFF", size=11)
+        HDR_ALIGN = Alignment(wrap_text=True, vertical="bottom", horizontal="center")
+        thin      = Side(style="thin", color="CCCCCC")
+        BORDER    = Border(left=thin, right=thin, top=thin, bottom=thin)
+        FILL_ODD  = PatternFill("solid", fgColor="EBF3FB")   # lichtblauw
+        FILL_EVEN = PatternFill("solid", fgColor="FFFFFF")
+
+        euro_fmt = '_-"€"* #,##0.00_-;-"€"* #,##0.00_-;_-"€"* "-"??_-;_-@_-'
+        pct_fmt  = '0.00%'
+
+        # Header rij
         headers = [
             "Leverancier", "Product", "Retailer",
             f"Oude prijs\n{datum_oud}",
@@ -565,39 +581,50 @@ with tab4:
         ]
         for c, h in enumerate(headers, 1):
             cell = ws.cell(row=1, column=c, value=h)
-            cell.font = Font(bold=True)
-            cell.alignment = Alignment(wrap_text=True, vertical="bottom")
-        ws.row_dimensions[1].height = 30
+            cell.font  = HDR_FONT
+            cell.fill  = HDR_FILL
+            cell.alignment = HDR_ALIGN
+            cell.border = BORDER
+        ws.row_dimensions[1].height = 32
 
-        # Opmaakcodes
-        euro_fmt = '_-"€"* #,##0.00_-;-"€"* #,##0.00_-;_-"€"* "-"??_-;_-@_-'
-        pct_fmt  = '0.00%'
-
-        # Data schrijven met numerieke waarden (toon bevat nog echte floats)
-        export_rows = toon[["Leverancier", "product_naam", "retailer",
-                             "Oude prijs", "Nieuwe prijs", "Verschil (€)", "Verschil (%)"]].reset_index(drop=True)
-
+        # Data rijen
         for r, row in enumerate(export_rows.itertuples(index=False), 2):
-            ws.cell(r, 1, row[0])  # Leverancier
-            ws.cell(r, 2, row[1])  # Product
-            ws.cell(r, 3, row[2])  # Retailer
+            fill = FILL_ODD if r % 2 == 0 else FILL_EVEN
+
+            for c, val in enumerate([row[0], row[1], row[2]], 1):
+                cell = ws.cell(r, c, val)
+                cell.fill = fill
+                cell.border = BORDER
+                cell.alignment = Alignment(vertical="center")
+
             for c, val in [(4, row[3]), (5, row[4]), (6, row[5])]:
                 cell = ws.cell(r, c, float(val) if pd.notna(val) else None)
                 cell.number_format = euro_fmt
+                cell.fill = fill
+                cell.border = BORDER
+                cell.alignment = Alignment(vertical="center")
+
             pct_cell = ws.cell(r, 7, float(row[6]) / 100 if pd.notna(row[6]) else None)
             pct_cell.number_format = pct_fmt
+            pct_cell.fill = fill
+            pct_cell.border = BORDER
+            pct_cell.alignment = Alignment(vertical="center", horizontal="right")
 
-        # Kolombreedtes
-        for col, breedte in zip("ABCDEFG", [14, 44, 12, 18, 18, 14, 13]):
+        # Kolombreedtes, bevroren header, auto-filter
+        for col, breedte in zip("ABCDEFG", [14, 46, 13, 18, 18, 14, 13]):
             ws.column_dimensions[col].width = breedte
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = f"A1:G{len(export_rows) + 1}"
 
-        wb.save(excel_buffer)
-        excel_buffer.seek(0)
+        # Bytes vastleggen (niet BytesIO meegeven — dat veroorzaakte de stale-bug)
+        buf = io.BytesIO()
+        wb.save(buf)
+        excel_bytes = buf.getvalue()
 
         bestandsnaam = f"prijswijzigingen_{prev_date.strftime('%Y%m%d')}_{latest_date.strftime('%Y%m%d')}.xlsx"
         st.download_button(
             label="⬇️ Download als Excel",
-            data=excel_buffer,
+            data=excel_bytes,
             file_name=bestandsnaam,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
